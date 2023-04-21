@@ -85,3 +85,4 @@
 
 ;;big check for all
 (check-equal? (interp (parse '(* 3 (+ 2 7))) fds) 27) ;; doesnt include funtion parsing yet
+
