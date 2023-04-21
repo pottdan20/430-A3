@@ -1,5 +1,4 @@
 #lang typed/racket
 (require typed/rackunit)
 
-;;hihiNormalhi
-(* 4 2)
+;;hihi
