@@ -9,8 +9,18 @@
 (struct NumC ([n : Real]) #:transparent)
 
 ; fds
-(define-type FunDefC (U FdC)) ;; ---------------------------------------------- fix 'U' once working. leave for now
 (struct FdC ([name : Symbol] [arg : Symbol] [body : ExprC]) #:transparent)
+
+(define invalid-id-hash
+  (hash '+ +
+        '- -
+        '* *
+        '/ /
+        'def 'def
+        'leq0? 'leq0?
+        'then 'then
+        'else 'else
+        '= '=))
 
 ; binop
 (struct BinopC ([operator : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
@@ -19,6 +29,7 @@
 (struct Leq0 ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
 
 ; function stuff
+
 (struct IdC ([s : Symbol]) #:transparent) ;; an ID element
 (struct AppC ([fun : Symbol] [expr : ExprC]) #:transparent) ;; application of a func
 
@@ -28,8 +39,13 @@
 
 
 ;; get-fundef
+(define (valid-id? [id : Any]) : Boolean
+  (match id
+    [(? symbol? s) (not (hash-has-key? invalid-id-hash s))]
+    [other false]))
+(check-equal? (valid-id? '=) false)
 ;;placeholder get-fundef
-(define (get-fundef [s : Symbol] [fundefs : (Listof FunDefC)]) : FunDefC
+(define (get-fundef [s : Symbol] [fundefs : (Listof FdC)]) : FdC
   (FdC 'f 'x (BinopC '+ (NumC 2) (IdC 'x))))
 
 ;; 3.1 Binary Arithmetic Operators
@@ -41,6 +57,8 @@
     ['/ /]
     [other (error "VVQS: error -- expected a valid operator (+, -, *, /), got ~e" other)]))
 
+(check-exn #rx"VVQS" (lambda() (get-operator '\))))
+
 
 
 ;; PARSER
@@ -48,11 +66,15 @@
 ;; takes an Sexp and returns the ExprC corresponding to the Sexp, if applicable.
 ;; if not, an error is thrown
 (define (parse [expr : Sexp]) : ExprC
-  (match expr
+ (match expr
      [(? real? n) (NumC n)]
      [(list (? symbol? s) l r) (BinopC s (parse l) (parse r))]
      [(list 'leq0? test 'then then 'else else) (Leq0 (parse test) (parse then) (parse else))]
      [(? symbol? sym) (IdC (cast sym Symbol))]
+     [(list (? symbol? s) arg) (cond
+                                 [(valid-id? s) (AppC s (parse arg))]
+                                 [else (error "VVQS: error -- expected valid id")]
+                                )]
      [other (error "VVQS: error -- expected expression, got ~e" other)])
   )
 
@@ -85,9 +107,8 @@
               (Leq0 (BinopC '+ (NumC 1) (NumC -2)) (BinopC '- (NumC 10) (BinopC '+ (NumC 1) (NumC 2))) {BinopC '- (NumC 1) (NumC 1)}))
 
 
-
 ;; PARSE FUNDEFS
-(define (parse-fundef [expr : Sexp]) : Any
+(define (parse-fundef [expr : Sexp]) : FdC
   (match expr
     [(list 'def (list name arg) '= body) (FdC (cast name Symbol) (cast arg Symbol) (parse body)) ] ; (printf "~v" name)
     [other (error "VVQS: error -- expected valid function definition, got ~e" other)]))
@@ -99,19 +120,31 @@
 (check-exn #rx"VVQS" (lambda() (parse-fundef '{{double x} = {* x 2}})))
 (check-exn #rx"VVQS" (lambda() (parse-fundef '{def = {* x 2}}))) 
 
+;;PARSE-PROG
+(define (parse-prog [s : Sexp]) : (Listof FdC)
+  (match s
+    ['() '()]
+    [(cons first r) (cons (parse-fundef first) (parse-prog r))]
+    [other (error "VVQS: code unbound by a function. got: ~e" other)]))
 
+(check-equal? (parse-prog '{{def {double x} = {* x 2}}
+                            {def {main init} = {double 7}}}) (list (FdC 'double 'x (BinopC '* (IdC 'x) (NumC 2))) (FdC 'main 'init (AppC 'double (NumC 7))) ))
+(check-equal? (parse-prog '{{def {double x} = {* x 2}}
+                            {def {main init} = {+ 5 2}}}) (list (FdC 'double 'x (BinopC '* (IdC 'x) (NumC 2))) (FdC 'main 'init (BinopC '+ (NumC 5) (NumC 2))) ))
+    
 ;; subst will substitute the argument value in the funcitons code 
 ;; https://cs.brown.edu/courses/cs173/2012/book/adding-functions.html#%28part._.Defining_.Data_.Representations%29
 (define (subst [what : ExprC] [for : Symbol] [in : ExprC]) : ExprC
   (match in
     [(NumC n) in]
     [(IdC s) (cond
-               [(symbol=? s for) what] ;; not sure what symbol?= is but book had it
+               [(symbol=? s for) what] ;; checks if symbol is the same of 'for'
                [else in])]
-    [(AppC f a) (AppC f (subst what for a))]
+    [(AppC f a) (AppC f (subst what for a))] ;---;; not needed until recursive functions?
     [(BinopC s l r) (BinopC s (subst what for l) (subst what for r))]
-    [other (error "VVQS: error -- expected valid symbol, got ~e" other)])) ;;maybe test??
+    #;[other (error "VVQS: error -- expected valid symbol, got ~e" other)])) ;;cant reach bc must take in as an ExprC
 
+(check-equal? (subst (NumC 3) 'x (BinopC '+ (NumC 5) (IdC 'd))) (BinopC '+ (NumC 5) (IdC 'd)))
 ;; INTERPETER
 
 ;; takes an ExprC and returns the result of the expression, if possible.
@@ -135,7 +168,7 @@
 
 (check-equal? (interp 
                (AppC 'f (NumC 7))) 9) ;; ---------- checks this f function that adds 2. its the only function I have hard coded into the fds list -------------------
-
+(check-exn #rx"VVQS" (lambda() (interp (IdC 'f))))
 
 #;(
 (check-equal? (interp (NumC 1)) 1)
@@ -188,5 +221,8 @@
 (check-exn #rx"VVQS" (lambda() (interp (parse '{+ 4}))))
 (check-exn #rx"VVQS" (lambda() (interp (parse '{+}))))
 (check-exn #rx"VVQS" (lambda() (interp (parse '{}))))
+
+#;(check-equal?  (interp (parse-prog '{{def {double x} = {* 2 x}}
+                            {def {main init} = {double 13}}})) 26)
 
 
