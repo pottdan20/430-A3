@@ -1,9 +1,9 @@
 #lang typed/racket
 (require typed/rackunit)
 ;; Dane Potter
-;; Berkeley
+;; Berkeley Reynolds
 
-;;project complete
+;; Full project implemented
 
 ;; organization:  Definitions -> parser -> interpreter
 
@@ -39,12 +39,18 @@
 (check-equal? (valid-id? 'hi) true)
 (check-equal? (valid-id? "hi") false)
 (check-equal? (valid-id? '/) false)
+(check-equal? (valid-id? 'leq0) true)
+(check-equal? (valid-id? 'leq0?) false)
+(check-equal? (valid-id? '=) false)
+(check-equal? (valid-id? '==) true)
+(check-equal? (valid-id? 10) false)
 
-;;placeholder fds (function definitions) that will be used for testing
+;; placeholder fds (function definitions) that will be used for testing
 (define testFds ( list (FdC 'f 'x (BinopC '+ (NumC 2) (IdC 'x))) (FdC 'g 'y (BinopC '+ (NumC 5) (IdC 'y)))))
 
 
-;; get-fundef given a symbol and fds, returns the FdC with the given name, if possible. else it will thow an error
+;; given a symbol and fds, returns the FdC with the given name, if possible.
+;; else it will thow an error
 (define (get-fundef [sym : Symbol] [fundefs : (Listof FdC)]) : FdC
   (match fundefs
     ['() (error "VVQS: No function found with the name: ~e" sym)]
@@ -55,15 +61,19 @@
 
 (check-equal? (get-fundef 'main (list  (FdC 'main 'init (AppC 'double (NumC 7)))))
               (FdC 'main 'init (AppC 'double (NumC 7))))
-
-
+(check-equal? (get-fundef 'f1 (list  (FdC 'main 'init (AppC 'double (NumC 7)))
+                                     (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x)))))
+              (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x))))
+(check-exn #rx"VVQS"
+           (lambda() (get-fundef 'f2 (list  (FdC 'main 'init (AppC 'double (NumC 7)))
+                                            (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x)))))))
 (check-exn #rx"VVQS"
            (lambda() (get-fundef 'NoFunc (list (FdC 'main 'init (AppC 'double (NumC 7)))))))
 
 
 
-;;Binary Arithmetic Operators
-;;get-operator takes a symbol and returns its actual operatior
+;; get-operator takes a symbol and returns its actual operator, if possible
+;; otherwise, an error is thrown
 (define (get-operator [operator : Symbol]) : (-> Real Real Real)
   (match operator
     ['+ +]
@@ -72,14 +82,21 @@
     ['/ /]
     [other (error "VVQS: error -- expected a valid operator (+, -, *, /), got ~e" other)]))
 
+(check-equal? (get-operator '+) +)
+(check-equal? (get-operator '-) -)
+(check-equal? (get-operator '*) *)
+(check-equal? (get-operator '/) /)
 (check-exn #rx"VVQS" (lambda() (get-operator '\))))
+(check-exn #rx"VVQS" (lambda() (get-operator 'a)))
+(check-exn #rx"VVQS" (lambda() (get-operator 'asdf)))
+
 
 
 
 ;; PARSER
 
 ;; takes an Sexp and returns the ExprC corresponding to the Sexp, if applicable.
-;; if not, an error is thrown
+;; otherwise, an error is thrown
 (define (parse [expr : Sexp]) : ExprC
  (match expr
      [(? real? n) (NumC n)]
@@ -94,8 +111,7 @@
                                  [(valid-id? s) (AppC s (parse arg))]
                                  [else (error "VVQS: error -- expected valid id")]
                                 )]
-     [other (error "VVQS: error -- expected expression, got ~e" other)])
-  )
+     [other (error "VVQS: error -- expected expression, got ~e" other)]))
 
 
 (check-equal? (parse '1) (NumC 1))
@@ -103,7 +119,6 @@
 (check-equal? (parse '{* 2 3}) (BinopC '* (NumC 2) (NumC 3)))
 (check-equal? (parse '{* {+ 1 2} {+ 3 4}}) (BinopC '* (BinopC '+ (NumC 1) (NumC 2)) (BinopC '+ (NumC 3) (NumC 4))))
 (check-equal? (parse '{+ {* 1 2} {* 3 4}}) (BinopC '+ (BinopC '* (NumC 1) (NumC 2)) (BinopC '* (NumC 3) (NumC 4))))
-
 
 (check-exn #rx"VVQS" (lambda() (parse '{a b c})))
 (check-exn #rx"VVQS" (lambda() (parse '{+ 4})))
@@ -127,14 +142,16 @@
 
 
 ;; PARSE FUNDEFS
-;;takes Sexp and returns the FdC 
+;; takes an Sexp and returns the FdC corresponding to the Sexp, if possible.
+;; Otherwise, throws an error
 (define (parse-fundef [expr : Sexp]) : FdC
   (match expr
     [(list 'def (list name arg) '= body) (cond
                                            [(and (valid-id? name) (valid-id? arg))
                                             (FdC (cast name Symbol) (cast arg Symbol) (parse body))]
                                            [else
-                                            (error "VVQS: error -- expected valid function def id, got ~e" name)]) ]
+                                            (error "VVQS: error -- expected valid function definition id, got ~e"
+                                                   name)])]
     [other (error "VVQS: error -- expected valid function definition, got ~e" other)]))
 
 (check-equal? (parse-fundef '{def {double x} = {* x 2}}) (FdC 'double 'x (BinopC '* (IdC 'x) (NumC 2))))
@@ -143,10 +160,12 @@
 (check-exn #rx"VVQS" (lambda() (parse-fundef '{def {/ x} = {* x 2}})))
 (check-exn #rx"VVQS" (lambda() (parse-fundef '{def {double x} = })))
 (check-exn #rx"VVQS" (lambda() (parse-fundef '{{double x} = {* x 2}})))
-(check-exn #rx"VVQS" (lambda() (parse-fundef '{def = {* x 2}}))) 
+(check-exn #rx"VVQS" (lambda() (parse-fundef '{def = {* x 2}})))
+(check-exn #rx"VVQS" (lambda() (parse-fundef '{def {+ x} = {* x 2}}))) 
 
 ;;PARSE-PROG
-;; takes Sexp and returns all Fdcs in the program as a list
+;; takes an Sexp and returns all function definitions in the Sexp as a list of FdCs, if possible.
+;; otherwise, throws an error
 (define (parse-prog [s : Sexp]) : (Listof FdC)
   (match s
     ['() '()]
@@ -164,7 +183,6 @@
                             {def {main init} = {+ 5 2}}})
               (list (FdC 'double 'x (BinopC '* (IdC 'x) (NumC 2)))
                     (FdC 'main 'init (BinopC '+ (NumC 5) (NumC 2))) ))
-
 
 (check-exn #rx"VVQS" (lambda() (parse-prog '{"asd"})))
 
@@ -265,7 +283,12 @@
 
 ;; Interpret-fns takes a list of FdCs and returns the interpretation of the main function
 (define (interp-fns [funs : (Listof FdC)]) : Real
-  (interp (AppC 'main (NumC 0)) funs)) 
+  (interp (AppC 'main (NumC 0)) funs))
+
+(check-equal?  (interp-fns (parse-prog '{{def {double x} = {* 2 x}}
+                            {def {main init} = {double 13}}})) 26)
+(check-equal?  (interp-fns (parse-prog '{{def {add-one x} = {+ 1 x}}
+                            {def {main init} = {add-one 13}}})) 14)
 
 ;; top-interp takes in Sexp in VVQS language and returns the interpreted output of a real number
 (: top-interp (Sexp -> Real))
@@ -274,9 +297,6 @@
 
 (check-equal?  (top-interp '{{def {double x} = {* 2 x}}
                             {def {main init} = {double 13}}}) 26)
-
-(check-equal?  (interp-fns (parse-prog '{{def {double x} = {* 2 x}}
-                            {def {main init} = {double 13}}})) 26)
 
 (check-equal?  (top-interp '{{def {makeNeg x} = {* -1 x}}
                                          {def {add5ThenMult2 x} = {* 2 {+ 5 x}}}
