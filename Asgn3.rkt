@@ -175,17 +175,20 @@
 
 ;; subst will substitute the argument value in the funcitons code 
 ;; https://cs.brown.edu/courses/cs173/2012/book/adding-functions.html#%28part._.Defining_.Data_.Representations%29
-(define (subst [what : ExprC] [for : Symbol] [in : ExprC]) : ExprC
+(define (subst [what : Real] [for : Symbol] [in : ExprC]) : ExprC   ;Changed type of what from ExprC to Real - BERK
   (match in
     [(NumC n) in]
     [(IdC s) (cond
-               [(symbol=? s for) what] ;; checks if symbol is the same of 'for'
+               [(symbol=? s for) (NumC what)] ;; checks if symbol is the same of 'for' ---- Changed what to (NumC what) BERK
                [else in])]
     [(AppC f a) (AppC f (subst what for a))] ;---;; not needed until recursive functions?
     [(BinopC s l r) (BinopC s (subst what for l) (subst what for r))]
+    [(Leq0 test then else) (Leq0 (subst what for test) (subst what for then) (subst what for else))]
     #;[other (error "VVQS: error -- expected valid symbol, got ~e" other)])) ;;cant reach bc must take in as an ExprC
 
-(check-equal? (subst (NumC 3) 'x (BinopC '+ (NumC 5) (IdC 'd))) (BinopC '+ (NumC 5) (IdC 'd)))
+(check-equal? (subst 3 'x (BinopC '+ (NumC 5) (IdC 'd))) (BinopC '+ (NumC 5) (IdC 'd)))
+(check-equal? (subst 1 'x (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
+              (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
 
 ;; INTERPETER
 ;; takes an ExprC and returns the result of the expression, if possible.
@@ -193,13 +196,15 @@
 (define (interp [expr : ExprC] [fds : (Listof FdC)]): Real
   (match expr
     [(NumC n) n]
-    [(BinopC op l r) ((get-operator op) (interp l fds) (interp r fds))]
+    [(BinopC op l r) (cond
+                       [(and (equal? op '/) (equal? (interp r fds) 0)) (error "VVQS: Can not divide by 0")] ; Added cond to check for div by 0 - BERK
+                       [else ((get-operator op) (interp l fds) (interp r fds))])]
     [(Leq0 test then else) (cond
                              [(<= (interp test fds) 0) (interp then fds)]
                              [else (interp else fds)]
                              )]
     [(AppC f a) (local ([define fd (get-fundef f fds)]) ;; from text book 
-                  (interp (subst a
+                  (interp (subst (interp a fds) ;; changed from a to (interp a fds) - BERK
                                  (FdC-arg fd)
                                  (FdC-body fd))
                           fds))]
@@ -239,6 +244,7 @@
                             (BinopC '* (NumC 10) (NumC 10))
                             {BinopC '- (NumC 10) (BinopC '* (NumC 1) (NumC 4))}) testFds) 6)
 (check-equal? (interp (parse '(* 3 (+ 2 7))) testFds) 27)
+(check-exn #rx"VVQS" (lambda() (interp (BinopC '/ (NumC 1) (NumC 0)) testFds)))
 
 
 ;; tests on whole process - both parse and interp
@@ -278,5 +284,9 @@
 (check-equal?  (interp-fns (parse-prog '{{def {makeNeg x} = {* -1 x}}
                                          {def {add5ThenMult2 x} = {* 2 {+ 5 x}}}
                                          {def {main init} = {+ {add2ThenNeg 12} {add5ThenMult2 2}}}
-                                         {def {add2ThenNeg x} = {makeNeg {+ 2 x}}}})) 0) 
+                                         {def {add2ThenNeg x} = {makeNeg {+ 2 x}}}})) 0)
+
+
+
+
 
