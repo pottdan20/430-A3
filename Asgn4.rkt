@@ -58,7 +58,8 @@
     ['() '()]))
 
 ;; placeholder fds (function definitions) that will be used for testing
-(define testFds ( list (FdC 'f (list 'x) (BinopC '+ (NumC 2) (IdC 'x))) (FdC 'g (list 'y) (BinopC '+ (NumC 5) (IdC 'y)))))
+(define testFds ( list (FdC 'f (list 'x) (BinopC '+ (NumC 2) (IdC 'x)))
+                       (FdC 'g (list 'y) (BinopC '+ (NumC 5) (IdC 'y)))))
 
 
 ;; given a symbol and fds, returns the FdC with the given name, if possible.
@@ -83,6 +84,9 @@
            (lambda() (get-fundef 'NoFunc (list (FdC 'main 'init (AppC 'double (NumC 7)))))))
 
 ]
+
+(check-exn #rx"VVQS"
+           (lambda() (get-fundef 'NoFunc '())))
 
 ;; get-operator takes a symbol and returns its actual operator, if possible
 ;; otherwise, an error is thrown
@@ -121,7 +125,8 @@
                         [else (error "VVQS: error -- expected valid id, got ~e" sym)])]
      [(list (? symbol? s) args ...) (cond
                                  [(valid-id? s) (AppC s (parse-args args))]
-                                 [(and (= (length args) 2) (not (valid-id? s))) (BinopC s (parse (first args)) (parse (second args)))]
+                                 [(and (= (length args) 2) (not (valid-id? s)))
+                                  (BinopC s (parse (first args)) (parse (second args)))]
                                  [else (error "VVQS: error -- expected valid id and got: ~e" args)]
                                 )]
      [other (error "VVQS: error -- expected expression, got ~e" other)]))
@@ -192,7 +197,8 @@
     #;[(cons (list 'def (list name args ...) '= body) r) (cons (parse-fundef
                                                          (list 'def (list name args) '= body)) (parse-prog r))]
     [(cons f r) (cons (parse-fundef f) (parse-prog r))]
-    #;[other (error "VVQS: code unbound by a function. got: ~e" other)])) ;--- commented out these lines to make multiple args smoother
+    #;[other (error "VVQS: code unbound by a function. got: ~e" other)])) ;--- commented out these
+                                                                       ;lines to make multiple args smoother
 
 (check-equal? (parse-prog '{{def {double x} = {* x 2}}
                             {def {tri f x z} = {* f {+ z x}}}
@@ -249,15 +255,32 @@
          ['() '()]
          [(cons f r) (error "VVQS : invalid variable count")])]))
 
+(check-equal? (make-tuple '() '()) '())
+(check-equal? (make-tuple '(+) '(1)) '((+ 1)))
+(check-equal? (make-tuple '(+ -) '(1 2)) '((+ 1) (- 2)))
+(check-exn #rx"VVQS"
+           (lambda() (make-tuple '(+ -) '(1))))
+(check-exn #rx"VVQS"
+           (lambda() (make-tuple '(+) '(1 2))))
+
+
 ;;subst-all goes through the argument list and maps the correct vars to the correct values
-(define (subst-all [what : (Listof Real)] [for : (Listof Symbol)] [in : ExprC] [pairs : (Listof (List Symbol Real))]) : ExprC
+(define (subst-all [what : (Listof Real)]
+                   [for : (Listof Symbol)]
+                   [in : ExprC]
+                   [pairs : (Listof (List Symbol Real))]) : ExprC
   (match in
     [(NumC n) in]
     [(IdC s) (NumC (get-real-from-sym pairs s))]
     [(AppC f args) (AppC f (map (lambda ([a : ExprC])
                                   (subst-all what for a pairs)) args))] 
     [(BinopC s l r) (BinopC s (subst-all what for l pairs) (subst-all what for r pairs))]
-    [(Leq0 test then else) (Leq0 (subst-all what for test pairs) (subst-all what for then pairs) (subst-all what for else pairs))]))
+    [(Leq0 test then else) (Leq0 (subst-all what for test pairs)
+                                 (subst-all what for then pairs)
+                                 (subst-all what for else pairs))]))
+
+
+
 
 ;; get-real-from-sym takes tuple list and returns paired real from desired symbol
 (define (get-real-from-sym [pairs : (Listof (List Symbol Real))] [sym : Symbol]) : Real
@@ -265,13 +288,22 @@
     [(cons (list s real) r) (cond
                               [(symbol=? s sym) real]
                               [else (get-real-from-sym r sym)])]
-    ['() (error "error line 285")]))
+    ['() (error "VVQS: error line 285")]))
 
 
 #;(check-equal? (subst-all (list 3 6) (list 'x 'y) (BinopC '+ (NumC 5) (IdC 'd))) (BinopC '+ (NumC 5) (IdC 'd)))
 #;(check-equal? (subst-all 1 'x (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
               (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
 
+
+
+;; tests for subst-all and get-real-from-sym
+(check-equal? (subst-all '(1) '(x) (Leq0 (NumC 1) (NumC 10) (IdC 'x)) '((x -10))) (Leq0 (NumC 1) (NumC 10) (NumC -10)))
+
+
+
+(check-exn #rx"VVQS"
+           (lambda() (get-real-from-sym '() 'x)))
 
 
 ;;interp tests
