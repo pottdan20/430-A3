@@ -72,18 +72,7 @@
        [(symbol=? s sym) (first fundefs)]
        [else (get-fundef sym r)])]))
 
-#;[(check-equal? (get-fundef 'main (list  (FdC 'main 'init (AppC 'double (NumC 7)))))
-              (FdC 'main 'init (AppC 'double (NumC 7))))
-(check-equal? (get-fundef 'f1 (list  (FdC 'main 'init (AppC 'double (NumC 7)))
-                                     (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x)))))
-              (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x))))
-(check-exn #rx"VVQS"
-           (lambda() (get-fundef 'f2 (list  (FdC 'main 'init (AppC 'double (NumC 7)))
-                                            (FdC 'f1 'x (BinopC '+ (NumC 1) (IdC 'x)))))))
-(check-exn #rx"VVQS"
-           (lambda() (get-fundef 'NoFunc (list (FdC 'main 'init (AppC 'double (NumC 7)))))))
 
-]
 
 (check-exn #rx"VVQS"
            (lambda() (get-fundef 'NoFunc '())))
@@ -116,9 +105,6 @@
 (define (parse [expr : Sexp]) : ExprC
  (match expr
      [(? real? n) (NumC n)]
-     #;[(list (? symbol? s) l r) (cond
-                                 [(not (valid-id? s)) (BinopC s (parse l) (parse r))]
-                                 [else (error "VVQS: error -- expected valid operator, got ~e" s)])]
      [(list 'leq0? test 'then then 'else else) (Leq0 (parse test) (parse then) (parse else))]
      [(? symbol? sym) (cond
                         [(valid-id? sym) (IdC (cast sym Symbol))]
@@ -145,7 +131,7 @@
 (check-equal? (parse '{* {+ 1 2} {+ 3 4}}) (BinopC '* (BinopC '+ (NumC 1) (NumC 2)) (BinopC '+ (NumC 3) (NumC 4))))
 (check-equal? (parse '{+ {* 1 2} {* 3 4}}) (BinopC '+ (BinopC '* (NumC 1) (NumC 2)) (BinopC '* (NumC 3) (NumC 4))))
 
-;(check-exn #rx"VVQS" (lambda() (parse '{a b c})))
+
 (check-exn #rx"VVQS" (lambda() (parse '{+ 4})))
 (check-exn #rx"VVQS" (lambda() (parse '{+ / 4})))
 (check-exn #rx"VVQS" (lambda() (parse '{+})))
@@ -194,11 +180,8 @@
 (define (parse-prog [s : Sexp]) : (Listof FdC)
   (match s
     ['() '()]
-    #;[(cons (list 'def (list name args ...) '= body) r) (cons (parse-fundef
-                                                         (list 'def (list name args) '= body)) (parse-prog r))]
-    [(cons f r) (cons (parse-fundef f) (parse-prog r))]
-    #;[other (error "VVQS: code unbound by a function. got: ~e" other)])) ;--- commented out these
-                                                                       ;lines to make multiple args smoother
+    [(cons f r) (cons (parse-fundef f) (parse-prog r))]))
+     
 
 (check-equal? (parse-prog '{{def {double x} = {* x 2}}
                             {def {tri f x z} = {* f {+ z x}}}
@@ -247,7 +230,7 @@
 ;;interp tests below subst function
 ;; make tuple combines the 2 lists into a list of tuples
 (define (make-tuple [for : (Listof Symbol)] [what : (Listof Real)]) : (Listof (List Symbol Real))
-  (match for
+  (match for 
     [(cons f r) (match what
                   [(cons f2 r2) (cons (list f f2) (make-tuple r r2))]
                   ['() (error "VVQS : invalid variable count")])]
@@ -291,17 +274,9 @@
     ['() (error "VVQS: error line 285")]))
 
 
-#;(check-equal? (subst-all (list 3 6) (list 'x 'y) (BinopC '+ (NumC 5) (IdC 'd))) (BinopC '+ (NumC 5) (IdC 'd)))
-#;(check-equal? (subst-all 1 'x (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
-              (Leq0 (BinopC '+ (NumC 1) (NumC 2)) (NumC 5) (NumC 10)))
-
-
 
 ;; tests for subst-all and get-real-from-sym
 (check-equal? (subst-all '(1) '(x) (Leq0 (NumC 1) (NumC 10) (IdC 'x)) '((x -10))) (Leq0 (NumC 1) (NumC 10) (NumC -10)))
-
-
-
 (check-exn #rx"VVQS"
            (lambda() (get-real-from-sym '() 'x)))
 
@@ -361,12 +336,12 @@
 
 ;; Interpret-fns takes a list of FdCs and returns the interpretation of the main function
 (define (interp-fns [funs : (Listof FdC)]) : Real
-  (interp (AppC 'main (list (NumC 0))) funs))
+  (interp (AppC 'main '()) funs)) 
 
 (check-equal?  (interp-fns (parse-prog '{{def {double x} = {* 2 x}}
-                            {def {main init} = {double 13}}})) 26)
+                            {def {main} = {double 13}}})) 26)
 (check-equal?  (interp-fns (parse-prog '{{def {add-one x} = {+ 1 x}}
-                            {def {main init} = {add-one 13}}})) 14)
+                            {def {main} = {add-one 13}}})) 14)
 
 ;; top-interp takes in Sexp in VVQS language and returns the interpreted output of a real number
 (: top-interp (Sexp -> Real))
@@ -375,15 +350,15 @@
 
 
 (check-equal?  (top-interp '{{def {double x y} = {* 2 y}}
-                            {def {main init} = {double 13 15}}}) 30)
+                            {def {main} = {+ 13 15}}}) 28)
 
 (check-equal?  (top-interp '{{def {double x} = {* 2 x}}
-                            {def {main init} = {double 13}}}) 26)
+                            {def {main} = {double 13}}}) 26)
 
 (check-equal?  (top-interp '{{def {add3together a b c} = {+ a {+ b c}}} 
                              {def {makeNeg x} = {* -1 x}}
                              {def {add5ThenMult2 x} = {* 2 {+ 5 x}}}
-                             {def {main init} = {+ {+ {add2ThenNeg 12} {add5ThenMult2 2}} {add3together 2 5 9}}}
+                             {def {main} = {+ {+ {add2ThenNeg 12} {add5ThenMult2 2}} {add3together 2 5 9}}}
                              {def {add2ThenNeg x} = {makeNeg {+ 2 x}}}}) 16) 
 
 
