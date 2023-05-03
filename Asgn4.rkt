@@ -181,7 +181,7 @@
 ;; takes an ExprC and returns the result of the expression, if possible.
 ;; if not, an error is thrown
 (define (interp [expr : ExprC] [env : Environment]): Value
-  (printf "interp - ~v - with env: ~v ~n" expr env)
+  ;(printf "interp - ~v - with env: ~v ~n" expr env)
   (match expr
     [(NumC n) n]
     [(FdC name args body) (FunV name args body)]
