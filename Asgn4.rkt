@@ -99,22 +99,17 @@
 
 ;; takes an Sexp and returns the ExprC corresponding to the Sexp, if applicable.
 ;; otherwise, an error is thrown
-#;(define (parse [expr : Sexp]) : ExprC
- (match expr
+(define (parse [expr : Sexp]) : ExprC
+  (match expr
    [(? real? n) (NumC n)]
    ;;[(? String s) (StringC s)]
-   [(list expr1 'if expr2 'else expr3) (NumC 2)]
+   [(list expr1 'if expr2 'else expr3) (NumC 2)] 
    ;;[(list expr1 'where (list a ':= b) ...)]
    [(list (list (? symbol? syms) ...) '=> expr) (LamC (cast syms (Listof Symbol)) (parse expr))]
    [(? symbol? sym) (cond
                       [(valid-id? sym) (IdC (cast sym Symbol))]
                       [else (error "VVQS: error -- expected valid id, got ~e" sym)])]
-   [(list (? symbol? s) args ...) (cond
-                                    [(valid-id? s) (AppC s (parse-args args))]
-                                    [(and (= (length args) 2) (not (valid-id? s)))
-                                     (BinopC s (parse (first args)) (parse (second args)))]
-                                    [else (error "VVQS: error -- expected valid id and got: ~e" args)]
-                                    )]
+   [(list lam exprs ...) (AppC (parse lam) (map (lambda (x) (parse x)) exprs))]
    [other (error "VVQS: error -- expected expression, got ~e" other)]))
 
 ;;parse-args parses a list of Sexp and returns a list of ExprC
@@ -122,9 +117,9 @@
   (match args
     ['() '()]
     [(cons f r) (cons (parse f) (parse-args r))])) 
-#;[
-#;(check-equal? (parse '{call 3 4}) (AppC 'call (list (NumC 3) (NumC 4))))
-#;(check-equal? (parse '{call}) (AppC 'call '()))
+
+;(check-equal? (parse '{call 3 4}) (AppC (IdC 'call) (list (NumC 3) (NumC 4))))
+(check-equal? (parse '{{x} => 5}) (LamC (list 'x) (NumC 5)))
 #;(check-equal? (parse '1) (NumC 1))
 #;(check-equal? (parse '{+ 2 3}) (BinopC '+ (NumC 2) (NumC 3)))
 #;(check-equal? (parse '{* 2 3}) (BinopC '* (NumC 2) (NumC 3)))
@@ -151,7 +146,7 @@
                     (BinopC '- (NumC 10) (BinopC '+ (NumC 1) (NumC 2)))
                     {BinopC '- (NumC 1) (NumC 1)}))
 
-]
+
 ;; PARSE FUNDEFS
 ;; takes an Sexp and returns the FdC corresponding to the Sexp, if possible.
 ;; Otherwise, throws an error
@@ -184,7 +179,7 @@
   ;(printf "interp - ~v - with env: ~v ~n" expr env)
   (match expr
     [(NumC n) n]
-    [(FdC name args body) (FunV name args body)]
+    [(FdC name args body) (FunV name args body)] 
     [(LamC args body) (CloV args body env)]
     [(AppC f args) (local ([define f-value (interp f env)])
                                               ;; from text book
