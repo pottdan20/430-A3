@@ -14,7 +14,7 @@
 (struct FdC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent) ;;lambda definition
 (define-type Environment (Listof Binding))
-(struct Env ([env : (Listof Binding)]) #:transparent)
+;(struct Env ([env : (Listof Binding)]) #:transparent)
 (struct IdC ([s : Symbol]) #:transparent) ;; an ID element
 (struct AppC ([fun : ExprC] [args : (Listof ExprC)]) #:transparent) ;; application of a func
 ; binop
@@ -76,12 +76,14 @@
 
 ;; get-operator takes a symbol and returns its actual operator, if possible
 ;; otherwise, an error is thrown
-(define (get-operator [operator : Symbol]) : (-> Real Real Real)
+(define (get-operator [operator : Symbol]) : (-> Real Real Value)
   (match operator
     ['+ +]
     ['* *]
     ['- -]
     ['/ /]
+    ['<= <=]
+    ['equal? equal?]
     [other (error "VVQS: error -- expected a valid operator (+, -, *, /), got ~e" other)]))
 
 #;(check-equal? (get-operator '+) +)
@@ -91,6 +93,31 @@
 #;(check-exn #rx"VVQS" (lambda() (get-operator '\))))
 #;(check-exn #rx"VVQS" (lambda() (get-operator 'a)))
 #;(check-exn #rx"VVQS" (lambda() (get-operator 'asdf)))
+
+
+;; serialize takes any VVQS5 value, and returns a string
+(define (serialize [val : Any]) : String
+  (match val
+    [(? real? val) (~v val)]
+    [#t "true"]
+    [#f "false"]
+    [(? string? val) (~v val)]
+    [(? CloV? val) "#<procedure>"]
+    [(? PrimV? val) "#<primop>"]
+    [other (error "VVQS: Expected valid VVQS5 value, got: ~e" val)]))
+
+(check-equal? (serialize 14) "14")
+(check-equal? (serialize #t) "true")
+(check-equal? (serialize #f) "false")
+(check-equal? (serialize true) "true")
+(check-equal? (serialize false) "false")
+(check-equal? (serialize "hi") "\"hi\"")
+(check-equal? (serialize "") "\"\"")
+(check-equal? (serialize (CloV (list '+ '-)
+                               (NumC 1)
+                               (list (Binding '+ 10) (Binding '- 20))))
+                         "#<procedure>")
+(check-equal? (serialize (PrimV '+)) "#<primop>")
 
 
 
@@ -188,6 +215,16 @@
                                               (extend-env (bind as
                                                                 (map (lambda ([a : ExprC]) (interp a env)) args))
                                                           CloEnv))] ;; interp each arg with current env and then add to closure env?
+                       [(PrimV s) (match args
+                                    [(cons l (cons r '())) (local ([define real-l (interp l env)]
+                                                                   [define real-r (interp r env)])
+                                                             (match real-l
+                                                               [(? real? rl) (match real-r
+                                                                               [(? real? rr) ((get-operator s) rl rr)]
+                                                                               [other (error "VVQS: error -- binary operator must take two reals, got ~e" args)])]
+                                                               [other (error "VVQS: error -- binary operator must take two reals, got ~e" args)]
+                                                             ))]
+                                    [other (error "VVQS: error -- expected two arguments, got ~e" args)])]
                        [other f-value]) 
                       
                      )]
@@ -231,7 +268,7 @@
 
 ;;interp tests below subst function
 ;; make tuple combines the 2 lists into a list of tuples
-(define (bind [for : (Listof Symbol)] [what : (Listof Value)]) : Environment
+(define (bind [for : (Listof Symbol)] [what : (Listof Value)]) : (Listof Binding)
   (match for 
     [(cons f r) (match what
                   [(cons f2 r2) (cons (Binding f f2) (bind r r2))]
@@ -290,7 +327,17 @@
                          (CloV (list 'y 'x) (AppC (IdC 'y) (list (IdC 'x))) '())
                          9
                          3)))
-(check-equal? (interp (AppC (IdC 'f) (list (LamC (list 'a) (IdC 'a)) (NumC 6))) testEnv1) 6)    
+(check-equal? (interp (AppC (IdC 'f) (list (LamC (list 'a) (IdC 'a)) (NumC 6))) testEnv1) 6)
+
+
+(define testEnv2 
+  (bind (list 'f 'true 'false) (list (CloV (list 'y 'x) (AppC (IdC 'y) (list (IdC 'x))) '()) #t #f)))
+
+(check-equal? (interp (AppC (IdC 'f) (list (LamC (list 'a) (IdC 'a)) (IdC 'true))) testEnv2) #t)
+(check-equal? (interp (AppC (IdC 'f) (list (LamC (list 'a) (IdC 'a)) (IdC 'false))) testEnv2) #f)
+
+(check-equal? (serialize (interp (AppC (IdC 'f) (list (LamC (list 'a) (IdC 'a)) (IdC 'false))) testEnv2)) "false")
+
 
 ;(check-equal? (interp (AppC (IdC 'f) (list (NumC 3) (IdC 'x))) testEnv1) 3)
 
@@ -359,12 +406,18 @@
                             {def {main} = {add-one 13}}})) 14)
 
 
+;; TOP LEVEL ENVIRONMENT
+(define top-env 
+  (bind (list 'true 'false '+ '- '* '/ '<= 'equal?) (list #t #f (PrimV '+) (PrimV '-) (PrimV '*) (PrimV '/) (PrimV '<=) (PrimV 'equal?) )))
+
+#;(define testEnv2 
+  (bind (list 'f 'true 'false) (list (CloV (list 'x) (AppC (IdC 'x) (list (IdC 'x))) '()) #t #f)))
 
 ;; top-interp takes in Sexp in VVQS language and returns the interpreted output of a real number
-;(: top-interp (Sexp -> Value))
+(: top-interp (Sexp -> Value))
 ;(define top-env (list (Binding '+ (PrimV '+)) (Binding '- (PrimV '-))))
-;(define (top-interp sexps)
- ; (interp (parse sexps) top-env))
+(define (top-interp sexps)
+  (serialize (interp (parse sexps) top-env)))
 
 
 #;(check-equal?  (top-interp '{{def {double x y} = {* 2 y}}
@@ -377,7 +430,27 @@
                              {def {makeNeg x} = {* -1 x}}
                              {def {add5ThenMult2 x} = {* 2 {+ 5 x}}}
                              {def {main} = {+ {+ {add2ThenNeg 12} {add5ThenMult2 2}} {add3together 2 5 9}}}
-                             {def {add2ThenNeg x} = {makeNeg {+ 2 x}}}}) 16) 
+                             {def {add2ThenNeg x} = {makeNeg {+ 2 x}}}}) 16)
+
+(check-equal? (top-interp '{true}) "true")
+(check-equal? (top-interp '{false}) "false")
+(check-equal? (top-interp '{6}) "6")
+;(check-equal? (top-interp '{"hi"}) "hi")  DO WE NEED TO ADD A CASE TO PARSE FOR STRINGS ??
+(check-equal? (top-interp '{{x} => {x}}) "#<procedure>")
+(check-equal? (top-interp '{{{x} => {+ x 1}} 3}) "4")
+(check-exn #rx"VVQS" (lambda() (top-interp '{{{x} => {+ x true}} 3})))
+(check-equal? (top-interp '{{{x} => {<= x 1}} 3}) "false")
+(check-equal? (top-interp '{{{x} => {<= x 4}} 3}) "true")
+(check-equal? (top-interp '{{{x} => {equal? x 4}} 4}) "true")
+(check-equal? (top-interp '{equal? 3 3}) "true")
+(check-equal? (top-interp '{equal? 3 4}) "false")
+
+
+
+
+
+
+
 
 
 
