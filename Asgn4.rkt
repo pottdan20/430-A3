@@ -8,13 +8,15 @@
 ;; organization:  Definitions -> parser -> interpreter
 
 ;; Data definitions
-(define-type ExprC (U NumC BinopC Leq0 IdC AppC LamC))
+(define-type ExprC (U NumC BinopC Leq0 IdC AppC LamC StringC IfC))
 (struct NumC ([n : Real]) #:transparent)
+(struct StringC ([s : String])#:transparent)
+(struct IfC ([do : ExprC] [if : ExprC] [else : ExprC])#:transparent)
 ;;function structs
 (struct FdC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent) ;;lambda definition
 (define-type Environment (Listof Binding))
-;(struct Env ([env : (Listof Binding)]) #:transparent)
+;(struct Env ([env : (Listof Binding)]) #:transparent) 
 (struct IdC ([s : Symbol]) #:transparent) ;; an ID element
 (struct AppC ([fun : ExprC] [args : (Listof ExprC)]) #:transparent) ;; application of a func
 ; binop
@@ -129,8 +131,8 @@
 (define (parse [expr : Sexp]) : ExprC
   (match expr
    [(? real? n) (NumC n)]
-   ;;[(? String s) (StringC s)]
-   [(list expr1 'if expr2 'else expr3) (NumC 2)] 
+   [(? string? s) (StringC s)]
+   [(list expr1 'if expr2 'else expr3) (IfC (parse expr1) (parse expr2) (parse expr3))]
    ;;[(list expr1 'where (list a ':= b) ...)]
    [(list (list (? symbol? syms) ...) '=> expr) (LamC (cast syms (Listof Symbol)) (parse expr))]
    [(? symbol? sym) (cond
@@ -139,6 +141,9 @@
    [(list lam exprs ...) (AppC (parse lam) (map (lambda (x) (parse x)) exprs))]
    [other (error "VVQS: error -- expected expression, got ~e" other)]))
 
+
+
+ 
 ;;parse-args parses a list of Sexp and returns a list of ExprC
 #;(define (parse-args [args : (Listof Sexp)]) : (Listof ExprC)
   (match args
@@ -203,11 +208,16 @@
 ;; takes an ExprC and returns the result of the expression, if possible.
 ;; if not, an error is thrown
 (define (interp [expr : ExprC] [env : Environment]): Value
-  ;(printf "interp - ~v - with env: ~v ~n" expr env)
   (match expr
     [(NumC n) n]
-    [(FdC name args body) (FunV name args body)] 
+    [(StringC s) s]
+    [(FdC name args body) (FunV name args body)]  
     [(LamC args body) (CloV args body env)]
+    [(IfC do if else) (local ([define condition (interp if env)])
+                        (match condition
+                          [#t (interp do env)]
+                          [#f (interp else env)]
+                          [else ((error "VVQS: error -- expected boolean expression in if, got ~e" if))]))]
     [(AppC f args) (local ([define f-value (interp f env)])
                                               ;; from text book
                      (match f-value
@@ -441,12 +451,17 @@
 (check-exn #rx"VVQS" (lambda() (top-interp '{{{x} => {+ x true}} 3})))
 (check-equal? (top-interp '{{{x} => {<= x 1}} 3}) "false")
 (check-equal? (top-interp '{{{x} => {<= x 4}} 3}) "true")
-(check-equal? (top-interp '{{{x} => {equal? x 4}} 4}) "true")
+(check-equal? (top-interp '{{{x} => {equal? x 4}} 4}) "true") 
 (check-equal? (top-interp '{equal? 3 3}) "true")
 (check-equal? (top-interp '{equal? 3 4}) "false")
+(check-equal? (top-interp '{{{x} => {8 if x else 1}} true }) "8")
+(check-equal? (top-interp '{{{x} => {8 if x else 1}} {<= 3 4} }) "8")
+(check-exn #rx"VVQS" (lambda () (top-interp '{{{x} => {8 if x else 1}} {+ 3 4} })))
+(check-equal? (top-interp '{{{{x} => {{- 12 5} if x else {{y} => {1 if y else 12}}}} false } true}) "1") ;; weird case. was just messing around
 
 
 
+ 
 
 
 
