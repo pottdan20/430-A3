@@ -38,7 +38,8 @@
         'if 'if
         'else 'else
         '=> '=>
-        '= '=))
+        '= '=
+        ':= ':=))
 
 ;; takes any and returns if it is a valid-id as a bool 
 (define (valid-id? [id : Any]) : Boolean
@@ -338,6 +339,8 @@
 ;(parse '{3 4 5})
 
 (check-exn #rx"user-error" (lambda() (top-interp '(((e) => (e e)) error))))
+
+
 
 
 
