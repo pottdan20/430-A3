@@ -24,11 +24,12 @@
 ; conditional
 (struct Leq0 ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
 ;;
-(define-type Value (U Real Boolean String CloV PrimV FunV))
+(define-type Value (U Real Boolean String CloV PrimV FunV ErrorV))
 (struct FunV ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 (struct CloV ([args : (Listof Symbol)] [body : ExprC] [env : Environment]) #:transparent)
 (struct Binding ([s : Symbol] [v : Value]) #:transparent)
 (struct PrimV ([op : Symbol]) #:transparent)
+(struct ErrorV ([msg : String]) #:transparent)
 
 
 
@@ -239,6 +240,8 @@
                                                                [other (error "VVQS: error -- binary operator must take two reals, got ~e" args)]
                                                              ))]
                                     [other (error "VVQS: error -- expected two arguments, got ~e" args)])]
+                       [(ErrorV msg) (define userMsg (first args))
+                                     (error (string-append msg (StringC-s (cast userMsg StringC)) ))] 
                        [other f-value]) 
                       
                      )]
@@ -422,7 +425,7 @@
 
 ;; TOP LEVEL ENVIRONMENT
 (define top-env 
-  (bind (list 'true 'false '+ '- '* '/ '<= 'equal?) (list #t #f (PrimV '+) (PrimV '-) (PrimV '*) (PrimV '/) (PrimV '<=) (PrimV 'equal?) )))
+  (bind (list 'true 'false '+ '- '* '/ '<= 'equal? 'error) (list #t #f (PrimV '+) (PrimV '-) (PrimV '*) (PrimV '/) (PrimV '<=) (PrimV 'equal?) (ErrorV "user-error: "))))
 
 #;(define testEnv2 
   (bind (list 'f 'true 'false) (list (CloV (list 'x) (AppC (IdC 'x) (list (IdC 'x))) '()) #t #f)))
@@ -465,6 +468,8 @@
 (check-equal? (top-interp '{{+ x y} where {[x := 5] [y := 7]}}) "12")
 
 
+(check-exn #rx"user-error: TEST" (lambda() (top-interp '{{error "TEST"}})))
+(check-exn #rx"user-error: ELSE" (lambda() (top-interp '{1 if {<= 1 0} else {error "ELSE"}})))
 
 
 
