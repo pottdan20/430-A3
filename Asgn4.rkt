@@ -31,6 +31,7 @@
 (struct PrimV ([op : Symbol]) #:transparent)
 
 
+
 (define invalid-id-hash
   (hash 'where 'where
         'if 'if
@@ -133,13 +134,15 @@
    [(? real? n) (NumC n)]
    [(? string? s) (StringC s)]
    [(list expr1 'if expr2 'else expr3) (IfC (parse expr1) (parse expr2) (parse expr3))]
-   ;;[(list expr1 'where (list a ':= b) ...)]
+   ;[(list expr1 'where (list a ':= b) ...) (AppC (LamC (cast a (Listof Symbol)) (parse expr1)) (cast b (Listof ExprC)))]
+   [(list expr1 'where (list (list a ':= b) ...)) (AppC (LamC (cast a (Listof Symbol)) (parse expr1)) (cast (map (lambda (x) (parse x)) (cast b (Listof Sexp))) (Listof ExprC)) )]
    [(list (list (? symbol? syms) ...) '=> expr) (LamC (cast syms (Listof Symbol)) (parse expr))]
    [(? symbol? sym) (cond
                       [(valid-id? sym) (IdC (cast sym Symbol))]
                       [else (error "VVQS: error -- expected valid id, got ~e" sym)])]
    [(list lam exprs ...) (AppC (parse lam) (map (lambda (x) (parse x)) exprs))]
    [other (error "VVQS: error -- expected expression, got ~e" other)]))
+
 
 
 
@@ -152,6 +155,7 @@
 
 ;(check-equal? (parse '{call 3 4}) (AppC (IdC 'call) (list (NumC 3) (NumC 4))))
 (check-equal? (parse '{{x} => 5}) (LamC (list 'x) (NumC 5)))
+(check-equal? (parse '{{+ x y} where {[x := 5] [y := 7]}}) (AppC (LamC (list 'x 'y) (AppC (IdC '+) (list (IdC 'x) (IdC 'y)))) (list (NumC 5) (NumC 7))))
 #;(check-equal? (parse '1) (NumC 1))
 #;(check-equal? (parse '{+ 2 3}) (BinopC '+ (NumC 2) (NumC 3)))
 #;(check-equal? (parse '{* 2 3}) (BinopC '* (NumC 2) (NumC 3)))
@@ -458,10 +462,10 @@
 (check-equal? (top-interp '{{{x} => {8 if x else 1}} {<= 3 4} }) "8")
 (check-exn #rx"VVQS" (lambda () (top-interp '{{{x} => {8 if x else 1}} {+ 3 4} })))
 (check-equal? (top-interp '{{{{x} => {{- 12 5} if x else {{y} => {1 if y else 12}}}} false } true}) "1") ;; weird case. was just messing around
+(check-equal? (top-interp '{{+ x y} where {[x := 5] [y := 7]}}) "12")
 
 
 
- 
 
 
 
