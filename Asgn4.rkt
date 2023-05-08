@@ -187,7 +187,6 @@
                                                              ))]
                                     [other (error "VVQS: error -- expected two arguments, got ~e" args)])]
                        [(ErrorV msg) (define userMsg (first args))
-                                     (printf "~v" userMsg)
                                      (match userMsg
                                        [(? StringC? s) (error (string-append msg (StringC-s (cast userMsg StringC))))]
                                        [other (error msg)])]  
@@ -339,6 +338,8 @@
 ;(parse '{3 4 5})
 
 (check-exn #rx"user-error" (lambda() (top-interp '(((e) => (e e)) error))))
+
+(check-equal? (top-interp '{{{{{x} => {{y} => {{z} => {+ {+ x y} z}}}} 2} 3} 4}) "9")
 
 
 
