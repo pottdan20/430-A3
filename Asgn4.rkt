@@ -12,12 +12,20 @@
 (struct NumC ([n : Real]) #:transparent)
 ;;function structs
 (struct FdC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
+(struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent) ;;lambda definition
+(struct Environment ([env : (Listof Binding)]) #:transparent)
 (struct IdC ([s : Symbol]) #:transparent) ;; an ID element
 (struct AppC ([fun : Symbol] [exprs : (Listof ExprC)]) #:transparent) ;; application of a func
 ; binop
 (struct BinopC ([operator : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 ; conditional
 (struct Leq0 ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
+;;
+(define-type Value (U Real Boolean String CloV PrimV))
+(struct CloV ([args : (Listof Symbol)] [body : ExprC] [env : Environment]) )
+(struct Binding ([s : Symbol] [v : Value]))
+(struct PrimV ([op : Symbol]))
+
 
 (define invalid-id-hash
   (hash '+ +
@@ -343,8 +351,11 @@
 (check-equal?  (interp-fns (parse-prog '{{def {add-one x} = {+ 1 x}}
                             {def {main} = {add-one 13}}})) 14)
 
+
+
 ;; top-interp takes in Sexp in VVQS language and returns the interpreted output of a real number
 (: top-interp (Sexp -> Real))
+(define top-env (Environment (list (Binding '+ (PrimV '+)) (Binding '- (PrimV '-)))))
 (define (top-interp fun-sexps)
   (interp-fns (parse-prog fun-sexps)))
 
